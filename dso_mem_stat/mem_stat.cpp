@@ -28,6 +28,7 @@ static int filter_signal_num = 12;
 
 static std::atomic_int check_state{0}; // 0: no check, 1:checking, 2:checked
 static std::atomic_bool is_stat {false};
+thread_local bool is_collect_info = false;
 
 static void init()
 {
@@ -108,7 +109,6 @@ void *malloc(size_t size)
     fprintf(stderr, "allocated bytes memory %ld in %p\n", size, ptr);
 
     if (is_stat) {
-        static thread_local bool is_collect_info = false;
         if (!is_collect_info) {
             is_collect_info = true;
             collect_info(ptr, size);
@@ -124,9 +124,11 @@ void free(void *ptr)
     fn_free(ptr);
     fprintf(stderr, "deallocated bytes memory in %p\n", ptr);
 
-    if (is_stat) {
+    if (is_stat && !is_collect_info && ptr != nullptr) {
         std::lock_guard<std::mutex> lock(pos_mtx);
-        mem_size_map[dso_name] -= mem_pos_map[(uint64_t)ptr];
-        fprintf(stderr, "dso_name %s in %p free size: %ld \n", dso_name, ptr, mem_pos_map[(uint64_t)ptr]);
+        if (mem_pos_map.find((uint64_t)ptr) != mem_pos_map.end()) {
+            mem_size_map[dso_name] -= mem_pos_map[(uint64_t)ptr];
+            fprintf(stderr, "dso_name %s in %p free size: %ld \n", dso_name, ptr, mem_pos_map[(uint64_t)ptr]);
+        }
     }
 }
